@@ -1,107 +1,109 @@
 // Bridges between React and the Canvas Gauge npm lib
 // Custom attributes are maxAlertValue, minAlertValue, maxAlertColor, minAlertColor
 
-import React from 'react';
+import React, { useRef, useEffect, useMemo, useCallback } from 'react';
 import { LinearGauge } from 'canvas-gauges';
 
-class ReactLinearGauge extends React.Component {
-  constructor(props) {
-    super(props);
-    this.canvasRef = React.createRef();
-    this.opts = { ...props }; // need to copy as props are not editable and we need to remove fields
-    this.alert = { alertChange: false, maxAlert: false, minAlert: false };
+const ReactLinearGauge = (props) => {
+  const canvasRef = useRef(null);
+  const gaugeRef = useRef(null);
+  const alertRef = useRef({ alertChange: false, maxAlert: false, minAlert: false });
 
-    if (typeof this.opts.maxAlertColor != "undefined") {
-      this.alert = {
-        alertChange: true,
-        maxAlertColor: this.opts.maxAlertColor,
-        maxAlertValue: this.opts.maxAlertValue,
-        maxAlertHit: false,
-        maxAlert: true
-      };
+  const opts = useMemo(() => {
+    const options = { ...props };
+    const alert = alertRef.current;
 
-      delete this.opts.maxAlertColor; // must use parameters within the scope of the radial library to prevent script errors
-      delete this.opts.maxAlertValue;
+    if (typeof options.maxAlertColor !== "undefined") {
+      alert.alertChange = true;
+      alert.maxAlert = true;
+      alert.maxAlertColor = options.maxAlertColor;
+      alert.maxAlertValue = options.maxAlertValue;
+      alert.maxAlertHit = false;
+      delete options.maxAlertColor;
+      delete options.maxAlertValue;
     }
 
-    if (typeof this.opts.minAlertColor != "undefined") {
-      this.alert = Object.assign(this.alert, {
-        alertChange: true,
-        minAlertColor: this.opts.minAlertColor,
-        minAlertValue: this.opts.minAlertValue,
-        minAlertHit: false,
-        minAlert: true
-      });
-      delete this.opts.minAlertColor; // must use parameters within the scope of the radial library to prevent script errors
-      delete this.opts.minAlertValue;
+    if (typeof options.minAlertColor !== "undefined") {
+      alert.alertChange = true;
+      alert.minAlert = true;
+      alert.minAlertColor = options.minAlertColor;
+      alert.minAlertValue = options.minAlertValue;
+      alert.minAlertHit = false;
+      delete options.minAlertColor;
+      delete options.minAlertValue;
     }
-  }
 
-  componentDidMount() {
-    // creates initial required object, blends inherited props into it when they are available, and adds the element
-    const Canvas = this.canvasRef.current;
-    const options = Object.assign({}, this.opts, { renderTo: Canvas });
-    // renders the element to the webpage
-    this.gauge = new LinearGauge(options).draw();
-    // assign the initial value
-    this.gauge.value = this.props.value; // the value of the dial must be determined by the parent component (props). Do not use state or it will not animate
-  }
+    return options;
+  }, [props]);
 
-  resetColor = () => { // resets colors to default values
-    const go = this.gauge.options;
-    go.colorBarProgress = this.opts.colorBarProgress;
-    go.colorBorderOuter = this.opts.colorBorderOuter;
-    this.gauge.update();
-  }
+  const resetColor = useCallback(() => {
+    const gauge = gaugeRef.current;
+    if (gauge) {
+      gauge.options.colorBarProgress = opts.colorBarProgress;
+      gauge.options.colorBorderOuter = opts.colorBorderOuter;
+      gauge.update();
+    }
+  }, [opts]);
 
-  componentDidUpdate() {
-    if (this.gauge.value !== this.props.value) {
-      this.gauge.value = this.props.value;
+  const updateGauge = useCallback(() => {
+    const gauge = gaugeRef.current;
+    const alert = alertRef.current;
 
-      if (this.alert.alertChange) {
-        const go = this.gauge.options;
-        const al = this.alert;
+    if (gauge && gauge.value !== props.value) {
+      gauge.value = props.value;
 
-        if (this.alert.maxAlert) {
-          if (this.props.value >= al.maxAlertValue) {
-            go.colorBarProgress = al.maxAlertColor;
+      if (alert.alertChange) {
+        const go = gauge.options;
+
+        if (alert.maxAlert) {
+          if (props.value >= alert.maxAlertValue) {
+            go.colorBarProgress = alert.maxAlertColor;
             go.colorBorderOuter = "#F00";
-            this.alert.maxAlertHit = true;
-            this.gauge.update();
-          }
-
-          if (al.maxAlertHit && this.props.value < al.maxAlertValue) { // turn off and change color if we've fallen below the threshold value
-            this.alert.maxAlertHit = false;
-            if ((al.minAlert && !al.minAlertHit) || !al.minAlert) {
-              this.resetColor();
+            alert.maxAlertHit = true;
+            gauge.update();
+          } else if (alert.maxAlertHit && props.value < alert.maxAlertValue) {
+            alert.maxAlertHit = false;
+            if ((alert.minAlert && !alert.minAlertHit) || !alert.minAlert) {
+              resetColor();
             }
           }
-        }  //eof maxAlert
+        }
 
-        if (this.alert.minAlert) {
-          if (this.props.value <= al.minAlertValue) {
-            go.colorBarProgress = al.minAlertColor;
+        if (alert.minAlert) {
+          if (props.value <= alert.minAlertValue) {
+            go.colorBarProgress = alert.minAlertColor;
             go.colorBorderOuter = "#00F";
-            this.alert.minAlertHit = true;
-            this.gauge.update();
-          }
-
-          if (al.minAlertHit && this.props.value > al.minAlertValue) { // turn off and change color if we've fallen below the threshold value
-            this.alert.minAlertHit = false;
-            if ((al.maxAlert && !al.maxAlertHit) || !al.maxAlert) {
-              this.resetColor();
+            alert.minAlertHit = true;
+            gauge.update();
+          } else if (alert.minAlertHit && props.value > alert.minAlertValue) {
+            alert.minAlertHit = false;
+            if ((alert.maxAlert && !alert.maxAlertHit) || !alert.maxAlert) {
+              resetColor();
             }
           }
-        } // eof minAlert
-      } //eof alertchange
-    } //eof of block of code executed on value change
-  }
+        }
+      }
+    }
+  }, [props.value, resetColor]);
 
-  render() {
-    return (
-      <canvas ref={this.canvasRef} />
-    )
-  }
-}
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const options = { ...opts, renderTo: canvas };
+    gaugeRef.current = new LinearGauge(options).draw();
+    gaugeRef.current.value = props.value;
+
+    return () => {
+      if (gaugeRef.current) {
+        gaugeRef.current.destroy();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    updateGauge();
+  }, [updateGauge]);
+
+  return <canvas ref={canvasRef} />;
+};
 
 export default ReactLinearGauge;
